@@ -1,47 +1,48 @@
-version: '3'
-
+version: "3"
 
 services:
-  bitwarden:
+  vaultwarden:
     # Standard Bitwarden is very resource-heavy and cannot run on micro cloud instances
     # Vaultwarden is a Rust (mostly) feature-complete implementation of Bitwarden
     # https://github.com/dani-garcia/vaultwarden
     image: vaultwarden/server:alpine
     restart: always
-    container_name: bitwarden
-    depends_on: 
-    - proxy
+    container_name: vaultwarden
+    depends_on:
+      - proxy
     volumes:
-    - ${PWD}/bitwarden:/data
-    - ${PWD}/utilities/backup.sh:/backup.sh:ro
+      - ${PWD}/vaultwarden:/data
+      - ${PWD}/utilities/backup.sh:/backup.sh:ro
     environment:
-    - LOG_FILE=/data/bitwarden.log
-    - WEBSOCKET_ENABLED=true            # required for websockets
-    - SHOW_PASSWORD_HINT=false
-    - DOMAIN=https://${DOMAIN}          # DOMAIN is set in .env but doesn't have protocol prefix
-    - SMTP_FROM_NAME=Bitwarden (${DOMAIN})
-    - IP_HEADER=X-Forwarded-For
-    - ADMIN_TOKEN                       # Value-less variables are set in .env
-    - SIGNUPS_ALLOWED
-    - SMTP_HOST
-    - SMTP_FROM
-    - SMTP_PORT
-    - SMTP_SECURITY
-    - SMTP_USERNAME
-    - SMTP_PASSWORD
-    - YUBICO_CLIENT_ID
-    - YUBICO_SECRET_KEY
-    - YUBICO_SERVER
-    - ORG_CREATION_USERS
-    - BACKUP
-    - BACKUP_DAYS
-    - BACKUP_DIR
-    - BACKUP_EMAIL_FROM_NAME
-    - BACKUP_ENCRYPTION_KEY
-    - BACKUP_EMAIL_TO
-    - BACKUP_EMAIL_NOTIFY
-    - BACKUP_RCLONE_CONF
-    - BACKUP_RCLONE_DEST
+      - LOG_FILE=/data/vaultwarden.log
+      - WEBSOCKET_ENABLED=true # required for websockets
+      - SHOW_PASSWORD_HINT=false
+      - DOMAIN=https://${DOMAIN} # DOMAIN is set in .env but doesn't have protocol prefix
+      - SMTP_FROM_NAME=Vaultwarden (${DOMAIN})
+      - IP_HEADER=CF-Connecting-IP
+      - ADMIN_TOKEN # Value-less variables are set in .env
+      - SIGNUPS_ALLOWED
+      - SMTP_HOST
+      - SMTP_FROM
+      - SMTP_PORT
+      - SMTP_SECURITY
+      - SMTP_USERNAME
+      - SMTP_PASSWORD
+      - YUBICO_CLIENT_ID
+      - YUBICO_SECRET_KEY
+      - YUBICO_SERVER
+      - ORG_CREATION_USERS
+      - BACKUP
+      - BACKUP_DAYS
+      - BACKUP_DIR
+      - BACKUP_EMAIL_FROM_NAME
+      - BACKUP_ENCRYPTION_KEY
+      - BACKUP_EMAIL_TO
+      - BACKUP_EMAIL_NOTIFY
+      - BACKUP_RCLONE_CONF
+      - BACKUP_RCLONE_DEST
+    networks:
+      - vwd
     command: >
       sh -c 'if [ -n "$BACKUP" ]; 
              then 
@@ -54,44 +55,30 @@ services:
              exec /start.sh'
 
   proxy:
-    # Caddy provides an automatic HTTPS reverse proxy with Let's Encrypt cert provisioning
-    # https://caddyserver.com/
-    image: caddy/caddy:alpine
+    # HAProxy to wrap all services and provide SSL if needed
+    image: haproxy:alpine
     restart: always
     container_name: proxy
     volumes:
-    - ${PWD}/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-    - ${PWD}/caddy/data:/data
-    - caddycerts:/root/.caddy
+      - ${PWD}/haproxy:/usr/local/etc/haproxy:ro
     ports:
-    - 80:80                             # Port 80 is necessary for Let's Encrypt ACME
-    - 443:443
-    environment:
-    - LOG_FILE=/data/logs/caddy.log
-    - ACME_AGREE=true                   # agree to ACME for auto HTTPS
-    - DOMAIN                            # Value-less variables are set in .env
-    - EMAIL
+      - 80:80
+    networks:
+      - vwd
 
-
-  ddns:
-    # This provides a ddclient dynamic dns updating cron which is as simple as running it
-    # and editing the ddns/config/ddclient.conf file
-    # https://github.com/linuxserver/docker-ddclient
-    image: linuxserver/ddclient
+  cloudflared:
+    # Cloudflared is a proxy tunnel that allows you to expose local services to the internet
+    image: cloudflare/cloudflared
+    container_name: cloudflared
     restart: always
-    container_name: ddns
-    depends_on: 
-    - bitwarden
-    volumes:
-    - ${PWD}/ddns:/config
-    environment:
-    - PUID
-    - PGID
-    - TZ
-
+    command: tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
+    depends_on:
+      - vaultwarden
+    networks:
+      - vwd
 
   fail2ban:
-    # Implements fail2ban functionality, banning ips that 
+    # Implements fail2ban functionality, banning ips that
     # try to bruteforce your vault
     # https://github.com/dani-garcia/vaultwarden/wiki/Fail2Ban-Setup
     # https://github.com/crazy-max/docker-fail2ban
@@ -99,75 +86,50 @@ services:
     restart: always
     container_name: fail2ban
     depends_on:
-    - bitwarden
+      - vaultwarden
     volumes:
-    - ${PWD}/fail2ban:/data
-    - ${PWD}/bitwarden:/bitwarden:ro
-    network_mode: "host"
-    privileged: true
-    cap_add:
-    - NET_ADMIN
-    - NET_RAW
+      - ${PWD}/fail2ban:/data
+      - ${PWD}/vaultwarden:/vaultwarden:ro
     environment:
-    - F2B_DB_PURGE_AGE=30d
-    - F2B_LOG_TARGET=/data/fail2ban.log
-    - F2B_LOG_LEVEL=INFO
-    - F2B_IPTABLES_CHAIN=INPUT
-    - SSMTP_HOST=${SMTP_HOST}
-    - SSMTP_PORT=${SMTP_PORT}
-    - SSMTP_USER=${SMTP_USERNAME}
-    - SSMTP_PASSWORD=${SMTP_PASSWORD}
-    - SSMTP_HOSTNAME=Bitwarden (${DOMAIN})
-    - SSMTP_TLS=${SMTP_TLS}
-    - SSMTP_STARTTLS=YES
-    - TZ
-
-
-  countryblock:
-    # The block script will block any country (defaults to CN and AU)
-    # Requires cap_add as listed and privileged because it uses iptables and ipset
-    # https://hub.docker.com/_/alpine/
-    image: alpine:latest
-    restart: always
-    container_name: countryblock
-    depends_on: 
-    - bitwarden
-    volumes:
-    - ${PWD}/countryblock/block.sh:/block.sh:ro
-    network_mode: "host"
-    privileged: true
-    cap_add:
-    - NET_ADMIN
-    - NET_RAW
-    environment:
-    - COUNTRIES
-    - COUNTRYBLOCK_SCHEDULE
-    - TZ
-    command: >
-      sh -c 'apk --update --no-cache add ipset iptables ip6tables wget bash tzdata &&
-             ln -sf /proc/1/fd/1 /var/log/block.log &&
-             sed -i "/bash \\/block\\.sh update/d" /etc/crontabs/root &&
-             echo "$COUNTRYBLOCK_SCHEDULE bash /block.sh update" >> /etc/crontabs/root &&
-             crond -d 8 &&
-             bash /block.sh start'    
-
+      - F2B_DB_PURGE_AGE=30d
+      - F2B_LOG_TARGET=/data/fail2ban.log
+      - F2B_LOG_LEVEL=INFO
+      - F2B_IPTABLES_CHAIN=INPUT
+      - SSMTP_HOST=${SMTP_HOST}
+      - SSMTP_PORT=${SMTP_PORT}
+      - SSMTP_USER=${SMTP_USERNAME}
+      - SSMTP_PASSWORD=${SMTP_PASSWORD}
+      - SSMTP_HOSTNAME=Vaultwarden (${DOMAIN})
+      - SSMTP_TLS=${SMTP_TLS}
+      - SSMTP_FROM=${SMTP_FROM}
+      - SSMTP_TO=${SMTP_ADMIN}
+      - SSMTP_STARTTLS=YES
+      - PUID
+      - PGID
+      - CF_USER
+      - CF_TOKEN
+      - TZ
+    networks:
+      - vwd
 
   watchtower:
-    # Watchtower will pull down your new image, gracefully shut down your existing container 
+    # Watchtower will pull down your new image, gracefully shut down your existing container
     # and restart it with the same options that were used when it was deployed initially
     # https://github.com/containrrr/watchtower
     image: containrrr/watchtower
     restart: always
     container_name: watchtower
-    depends_on: 
-    - bitwarden
+    depends_on:
+      - vaultwarden
     volumes:
-    - /var/run/docker.sock:/var/run/docker.sock
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
-    - WATCHTOWER_CLEANUP=true
-    - WATCHTOWER_SCHEDULE
-    - TZ
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_SCHEDULE
+      - TZ
+    networks:
+      - vwd
 
-
-volumes:
-  caddycerts:
+networks:
+  vwd:
+    name: vwd_network
