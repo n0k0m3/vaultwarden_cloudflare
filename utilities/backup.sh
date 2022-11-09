@@ -7,7 +7,7 @@
 LOG=/var/log/backup.log
 MUTTRC=/tmp/muttrc
 
-# Bitwarden Email settings - usually provided as environment variables for but may be set below:
+# Vaultwarden Email settings - usually provided as environment variables for but may be set below:
 # SMTP_HOST=
 # SMTP_FROM=
 # SMTP_PORT=
@@ -67,7 +67,7 @@ email_body() {
   # Email body messages
   EMAIL_BODY_TAR="Email backup successful.
 
-To restore, untar in the Bitwarden data directory:
+To restore, untar in the Vaultwarden data directory:
     tar -zxf $FILE.tar.gz"
 
   EMAIL_BODY_AES="To decrypt an encrypted backup (.aes256), first decrypt using openssl:
@@ -116,7 +116,7 @@ make_backup() {
   FILES=""
   FILES="$FILES $([ -d attachments ] && echo attachments)"
   FILES="$FILES $([ -d sends ] && echo sends)"
-  FILES="$FILES $([ -f config.json ] && echo sends)"
+  FILES="$FILES $([ -f config.json ] && echo config.json)"
   FILES="$FILES $([ -f rsa_key.der -o -f rsa_key.pem -o -f rsa_key.pub.der ] && echo rsa_key*)"
 
   # tar up files and encrypt with openssl and encryption key
