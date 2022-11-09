@@ -61,8 +61,6 @@ services:
     container_name: proxy
     volumes:
       - ${PWD}/haproxy:/usr/local/etc/haproxy:ro
-    ports:
-      - 80:80
     networks:
       - vwd
 
@@ -132,4 +130,4 @@ services:
 
 networks:
   vwd:
-    name: vwd_network
+
