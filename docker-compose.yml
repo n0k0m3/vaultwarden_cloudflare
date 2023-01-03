@@ -8,12 +8,12 @@ services:
     image: vaultwarden/server:alpine
     restart: always
     container_name: vaultwarden
-    depends_on:
-      - proxy
     volumes:
       - ${PWD}/vaultwarden:/data
       - ${PWD}/utilities/backup.sh:/backup.sh:ro
     environment:
+      - PUID
+      - PGID
       - LOG_FILE=/data/vaultwarden.log
       - WEBSOCKET_ENABLED=true # required for websockets
       - SHOW_PASSWORD_HINT=false
@@ -55,12 +55,14 @@ services:
              exec /start.sh'
 
   proxy:
-    # HAProxy to wrap all services and provide SSL if needed
-    image: haproxy:alpine
+    image: nginx
     restart: always
     container_name: proxy
+    depends_on:
+      - vaultwarden
     volumes:
-      - ${PWD}/haproxy:/usr/local/etc/haproxy:ro
+      - ${PWD}/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${PWD}/nginx/sites-enabled:/etc/nginx/sites-enabled:ro
     networks:
       - vwd
 
@@ -71,7 +73,7 @@ services:
     restart: always
     command: tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
     depends_on:
-      - vaultwarden
+      - proxy
     networks:
       - vwd
 
@@ -130,4 +132,4 @@ services:
 
 networks:
   vwd:
-
+    name: vwd_network
