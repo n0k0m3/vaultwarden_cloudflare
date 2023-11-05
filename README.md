@@ -25,8 +25,8 @@ Before you start, ensure you have the following:
 SSH into VPS and clone this repo:
 
 ```bash
-$ git clone https://github.com/n0k0m3/vaultwarden_cloudflare
-$ cd vaultwarden_cloudflare
+git clone https://github.com/n0k0m3/vaultwarden_cloudflare
+cd vaultwarden_cloudflare
 ```
 
 ### Configure Environmental Variables with `.env`
@@ -53,7 +53,8 @@ This will work out of the box - no `fail2ban` configuration is needed unless you
 To start up, use `docker-compose`:
 
 ```bash
-$ docker-compose up
+docker network create cloudflared
+docker-compose up
 ```
 
 You can now use your browser to visit your new Bitwarden site. 
