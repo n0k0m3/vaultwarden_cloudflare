@@ -5,7 +5,7 @@ services:
     # Standard Bitwarden is very resource-heavy and cannot run on micro cloud instances
     # Vaultwarden is a Rust (mostly) feature-complete implementation of Bitwarden
     # https://github.com/dani-garcia/vaultwarden
-    image: vaultwarden/server:alpine
+    image: vaultwarden/server:testing-alpine
     restart: always
     container_name: vaultwarden
     depends_on:
@@ -28,6 +28,9 @@ services:
       - SMTP_SECURITY
       - SMTP_USERNAME
       - SMTP_PASSWORD
+      - PUSH_ENABLED
+      - PUSH_INSTALLATION_ID
+      - PUSH_INSTALLATION_KEY
       - YUBICO_CLIENT_ID
       - YUBICO_SECRET_KEY
       - YUBICO_SERVER
@@ -42,7 +45,7 @@ services:
       - BACKUP_RCLONE_CONF
       - BACKUP_RCLONE_DEST
     networks:
-      - vwd
+      - cloudflared
     command: >
       sh -c 'if [ -n "$BACKUP" ]; 
              then 
@@ -62,7 +65,7 @@ services:
     volumes:
       - ${PWD}/haproxy:/usr/local/etc/haproxy:ro
     networks:
-      - vwd
+      - cloudflared
 
   cloudflared:
     # Cloudflared is a proxy tunnel that allows you to expose local services to the internet
@@ -73,7 +76,7 @@ services:
     depends_on:
       - vaultwarden
     networks:
-      - vwd
+      - cloudflared
 
   fail2ban:
     # Implements fail2ban functionality, banning ips that
@@ -108,7 +111,7 @@ services:
       - CF_TOKEN
       - TZ
     networks:
-      - vwd
+      - cloudflared
 
   watchtower:
     # Watchtower will pull down your new image, gracefully shut down your existing container
@@ -126,8 +129,9 @@ services:
       - WATCHTOWER_SCHEDULE
       - TZ
     networks:
-      - vwd
+      - cloudflared
 
 networks:
-  vwd:
-
+  cloudflared:
+    name: cloudflared
+    external: true
